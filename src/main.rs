@@ -1,5 +1,7 @@
+use chrono::Local;
+use clap::{Arg, Command};
 use confy;
-use clap::{Command, Arg};
+use env_logger::{self, Builder};
 use log::LevelFilter;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -76,13 +78,16 @@ impl SpeakerBox {
                 RepeatMode::All
             } else {
                 RepeatMode::None
-            }).await.unwrap_or(());
+            })
+            .await
+            .unwrap_or(());
             spk.set_loudness(self.sound.loudness).await.unwrap_or(());
             spk.set_treble(self.sound.treble).await.unwrap_or(());
             spk.set_bass(self.sound.bass).await.unwrap_or(());
 
             Some(spk)
         } else {
+            log::warn!("Failed to connect to {}", self.ip);
             None
         }
     }
@@ -123,9 +128,10 @@ async fn init() -> Vec<Speaker> {
     cfg.to_speaker().await
 }
 
-
 #[tokio::main]
 async fn main() {
+    Builder::new().filter(None, LevelFilter::Info).init();
+
     log::info!("Hello, world!");
 
     let args = Command::new("Sonos Controller")
@@ -136,20 +142,34 @@ async fn main() {
             Arg::new("url")
                 .required(true)
                 .takes_value(true)
-                .help("The url to a song to be played by the Speaker")
+                .help("The url to a song to be played by the Speaker"),
         )
         .get_matches();
 
     let spks = init().await;
+    log::info!("Connected to {} Speaker", spks.len());
     for spk in &spks {
+        log::info!(
+            "Loading Speaker {}",
+            spk.name().await.unwrap_or("NULL".to_string())
+        );
         spk.clear_queue().await.unwrap_or(());
         if let Some(url) = args.value_of("url") {
-            spk.queue_next(url, "").await.unwrap_or(());
+            log::info!("Adding {}", url);
+            spk.set_transport_uri(url, "").await.unwrap_or(());
+        } else {
+            log::info!("AHHHHH");
         }
-    }
-
-    for spk in &spks {
+        log::info!(": {:?}", spk.track().await.unwrap());
         spk.play().await.unwrap_or(());
     }
+
+    /*
+    for spk in &spks {
+        log::info!("Letting Speaker play");
+        log::info!(": {:?}", spk.track().await.unwrap());
+        spk.play().await.unwrap();
+    }
+    */
     //TODO: Add log outputs
 }
