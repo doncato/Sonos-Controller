@@ -1,4 +1,5 @@
 use confy;
+use clap::{Command, Arg};
 use log::LevelFilter;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -29,6 +30,8 @@ impl fmt::Display for Config {
     }
 }
 impl Config {
+    /// Iterates over every speaker configuration in the config and converts them
+    /// into a Vector of sonor::Speaker objects.
     async fn to_speaker(&self) -> Vec<Speaker> {
         let mut result = Vec::new();
         for b in self.speaker.iter() {
@@ -69,11 +72,11 @@ impl SpeakerBox {
             spk.set_volume(self.sound.volume).await.unwrap_or(());
             spk.set_crossfade(self.sound.crossfade).await.unwrap_or(());
             spk.set_shuffle(self.sound.shuffle).await.unwrap_or(());
-            if self.sound.repeat {
-                spk.set_repeat_mode(RepeatMode::All).await.unwrap_or(());
+            spk.set_repeat_mode(if self.sound.repeat {
+                RepeatMode::All
             } else {
-                spk.set_repeat_mode(RepeatMode::None).await.unwrap_or(());
-            }
+                RepeatMode::None
+            }).await.unwrap_or(());
             spk.set_loudness(self.sound.loudness).await.unwrap_or(());
             spk.set_treble(self.sound.treble).await.unwrap_or(());
             spk.set_bass(self.sound.bass).await.unwrap_or(());
@@ -113,17 +116,40 @@ impl fmt::Display for SoundConfig {
     }
 }
 
-fn init() -> Config {
+async fn init() -> Vec<Speaker> {
     let cfg: Config = confy::load_path("./SonosBoxes.config").expect(
         "Failed to start because the config file could not be created or could not be read!",
     );
-    cfg
+    cfg.to_speaker().await
 }
+
 
 #[tokio::main]
 async fn main() {
-    println!("Hello, world!");
-    let cfg = init();
-    let spks = cfg.to_speaker().await;
-    println!("Config: {:?}", spks);
+    log::info!("Hello, world!");
+
+    let args = Command::new("Sonos Controller")
+        .version("0.1.0")
+        .author("doncato, https://github.com/doncato")
+        .about("Control one or more Sonos Speaker")
+        .arg(
+            Arg::new("url")
+                .required(true)
+                .takes_value(true)
+                .help("The url to a song to be played by the Speaker")
+        )
+        .get_matches();
+
+    let spks = init().await;
+    for spk in &spks {
+        spk.clear_queue().await.unwrap_or(());
+        if let Some(url) = args.value_of("url") {
+            spk.queue_next(url, "").await.unwrap_or(());
+        }
+    }
+
+    for spk in &spks {
+        spk.play().await.unwrap_or(());
+    }
+    //TODO: Add log outputs
 }
