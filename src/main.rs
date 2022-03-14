@@ -1,5 +1,5 @@
-use actix_files;
-use actix_web::{App, HttpServer};
+use actix_files::NamedFile;
+use actix_web::{error, route, web, App, HttpRequest, HttpResponse, HttpServer, Result};
 use clap::{Arg, Command};
 use confy;
 use env_logger::{self, Builder};
@@ -8,9 +8,11 @@ use pnet::datalink::interfaces;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use sonor::{RepeatMode, Speaker};
+use std::collections::HashMap;
 use std::fmt;
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
 use tokio;
@@ -149,7 +151,33 @@ impl fmt::Display for SoundConfig {
     }
 }
 
-async fn init(log_level: LevelFilter) -> (Box<Path>, Vec<Speaker>, Vec<Ipv4Addr>) {
+#[derive(Debug, Clone)]
+struct OperationEnv {
+    path: Box<Path>,
+    spks: Vec<Speaker>,
+    ips: Vec<Ipv4Addr>,
+    req_ips: Vec<Ipv4Addr>,
+    spks_ips: HashMap<Speaker, Ipv4Addr>,
+}
+impl OperationEnv {
+    fn new(path: Box<Path>, spks: Vec<Speaker>, ips: Vec<Ipv4Addr>) -> Self {
+        Self {
+            path,
+            spks: spks.clone(),
+            ips,
+            req_ips: spks
+                .iter()
+                .map(|spk| {
+                    Ipv4Addr::from_str(spk.device().url().host().unwrap_or("0.0.0.0"))
+                        .unwrap_or(Ipv4Addr::new(0, 0, 0, 0))
+                })
+                .collect(),
+            spks_ips: HashMap::new(),
+        }
+    }
+}
+
+async fn init<'a>(log_level: LevelFilter) -> OperationEnv {
     Builder::new().filter(None, log_level).init();
     log::info!("Initializing . . .");
 
@@ -185,13 +213,50 @@ async fn init(log_level: LevelFilter) -> (Box<Path>, Vec<Speaker>, Vec<Ipv4Addr>
     }
 
     log::debug!("Trying to connect to configured speaker . . .");
-    (path, cfg.to_speaker().await, addrs)
+    OperationEnv::new(path, cfg.to_speaker().await, addrs)
+}
+
+#[route(
+    r"/files/{filename:.*.mp3|mp4|m4a|wma|aac|ogg|flac|alac|aiff|wav}",
+    method = "GET",
+    method = "HEAD"
+)]
+async fn music_files(req: HttpRequest, state: web::Data<OperationEnv>) -> Result<NamedFile> {
+    if let IpAddr::V4(src_addr) = req.peer_addr().unwrap().ip() {
+        log::info!("Request from {}", src_addr);
+        if src_addr == Ipv4Addr::LOCALHOST || state.req_ips.iter().any(|ip| ip == &src_addr) {
+            let path: PathBuf = req.match_info().query("filename").parse().unwrap();
+            let full_path = state.path.join(path);
+            Ok(NamedFile::open(full_path)?)
+        } else {
+            Err(error::ErrorForbidden("403 - Forbidden"))
+        }
+    } else {
+        Err(error::ErrorForbidden("403 - Forbidden"))
+    }
+}
+
+#[route("/", method = "GET")]
+async fn interface(req: HttpRequest, state: web::Data<OperationEnv>) -> Result<NamedFile> {
+    let src_addr = req.peer_addr().unwrap().ip();
+    if src_addr == Ipv4Addr::LOCALHOST || src_addr == Ipv6Addr::LOCALHOST {
+        let path: PathBuf = req.match_info().query("filename").parse().unwrap();
+        let full_path = Path::new("./web/").join(path);
+        Ok(NamedFile::open(full_path)?)
+    } else {
+        Err(error::ErrorForbidden("403 - Forbidden"))
+    }
 }
 
 #[actix_web::main]
-async fn run_webhandler(path: PathBuf) -> std::io::Result<()> {
+async fn run_webhandler(op: OperationEnv) -> std::io::Result<()> {
     HttpServer::new(move || {
-        App::new().service(actix_files::Files::new("/", path.clone()).show_files_listing())
+        App::new()
+            .app_data(web::Data::new(op.clone()))
+            .service(music_files)
+            .service(interface)
+
+        //.service(actix_files::Files::new("/files/", op.path.as_ref()).show_files_listing())
     })
     .bind(("0.0.0.0", 46864))?
     .run()
@@ -216,31 +281,32 @@ async fn main() {
     } else {
         LevelFilter::Info
     };
-    let (path, spks, ips) = init(llvl).await;
+    let op = init(llvl).await;
     log::info!("Initialized.");
-    log::debug!("Connected to {} Speaker", spks.len());
-    log::debug!("Serving HTTP Requests to {}", path.display());
-    let web_handler = thread::spawn(move || {
-        log::info!("Web Handler Thread started");
-        run_webhandler(path.to_path_buf()).unwrap();
-        log::info!("Web Handler Thread ended");
-    });
+    log::debug!("Connected to {} Speaker", op.spks.len());
+    log::debug!("Serving HTTP Requests to {}", op.path.display());
 
-    log::info!("Waiting one second to give the web server time to start . . .");
-    thread::sleep(Duration::from_secs(1));
+    let op_ = op.clone();
+    let handler = thread::spawn(|| run_webhandler(op).unwrap());
 
-    for spk in &spks {
-        let spk_name = spk.device().url().host().unwrap_or("unknown");
-        log::info!("Loading Speaker {}", spk_name);
-        for ip in ips.iter() {
-            let uri = format!(
-                "http://{}:46864/Ghostrunner/Daniel%20Deluxe%20-%20Air.mp3",
-                ip
-            );
-            log::info!("Setting uri to {}", uri);
-            spk.set_transport_uri(uri.as_str(), "").await.unwrap()
+    // This is just temporary for testing
+    let interaction = thread::spawn(|| async move {
+        thread::sleep(Duration::from_secs(1));
+        log::info!("Moin");
+        for spk in &op_.spks {
+            let spk_name = spk.device().url().host().unwrap_or("unknown");
+            log::info!("Loading Speaker {}", spk_name);
+            for ip in op_.ips.iter() {
+                let uri = format!(
+                    "http://{}:46864/files/Ghostrunner/Daniel%20Deluxe%20-%20Air.mp3",
+                    ip
+                );
+                log::info!("Setting uri to {}", uri);
+                spk.set_transport_uri(uri.as_str(), "").await.unwrap()
+            }
+            spk.play().await.unwrap();
         }
-        spk.play().await.unwrap();
-    }
-    web_handler.join().unwrap();
+    });
+    interaction.join().unwrap().await;
+    handler.join().unwrap();
 }
