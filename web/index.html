@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Sonos-Controller</title>
+        <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+        <meta name="author" content="https://github.com/doncato" />
+        <meta name="description" content="Control Sonos Speaker in your network" />
+        <meta name="keywords" content="App,Sonos,Sound,Speaker,Network" />
+
+        <link rel="preload" href="/rsc/style.css" as="style" />
+
+        <meta content="Sonos-Controller" property="og:title" />
+        <meta content="Control Sonos Speaker in your network" property="og:description" />
+        <meta content="Sonos-Controller" property="og:site_name" />
+        <meta content="website" property="og:type" />
+        <meta content="#f3f3f3" data-react-helmet="true" name="theme-color" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+        <link media="screen" />
+        <link rel="shortcut icon" type="image/png" href="/rsc/logo.png" />
+        <link rel="icon" type="image/png" href="/img/logo.png" />
+        <link rel="stylesheet" href="/rsc/style.css" />
+
+    </head>
+    <body>
+        <div class="content">
+            <h2>Sonos Controller</h2>
+            <h4>Control Sonos Speaker in your network</h4>
+            <noscript>
+                This site relies on JavaScript.
+            </noscript>
+            <hr>
+            <b>Available music files</b>
+            <div id="filelist">
+                Not Found
+            </div>
+        </div>
+        <script>
+            function fileButtonHandler(obj) {
+                var loc = obj.slice(5,);
+                getFiles(loc)
+            }
+
+            function writeFiles(data, loc) {
+                var str = `<b>${loc}</b><br><ul>`;
+                for (var i = 0; i < data.length; i++) {
+                    var e = data[i]
+                    str += "<li><button onclick='fileButtonHandler(this.id)' " + `id='file-${e}'>` + e + "</button></li>"
+                }
+                str += "</ul>"
+                document.getElementById("filelist").innerHTML = str;
+            }
+
+            function getFiles(loc) {
+                const xhr = new XMLHttpRequest()
+                var path = "/" + loc
+                xhr.open("GET", `http://${location.host}/api/filelist${path}`)
+                xhr.send()
+                // When the Request is completed
+                xhr.onload = function() {
+                    if (xhr.status === 200) {
+                        data = JSON.parse(xhr.responseText)
+                        console.log(data.count)
+                        writeFiles(data, path)
+                    } else {
+                        console.log("No filelist available")
+                    }
+                }
+                // When a network error is encountered
+                xhr.onerror = function() {
+                    console.log("Failed to get filelist")
+                }
+                // Log progress
+                xhr.onprogress = function(e) {
+                    if (e.lengthComputable) {
+                        console.log(`${e.loaded} B of ${e.total} B loaded...`)
+                    } else {
+                        console.log(`${e.loaded} B loaded...`)
+                    }
+                }
+            }
+
+            // Make a request to the Backend and ask for a filelist
+            getFiles("")
+
+
+
+
+        </script>
+    </body>
+</html>

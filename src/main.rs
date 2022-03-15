@@ -1,5 +1,5 @@
 use actix_files::NamedFile;
-use actix_web::{error, route, web, App, HttpRequest, HttpResponse, HttpServer, Result};
+use actix_web::{error, route, web, App, HttpRequest, HttpResponse, HttpServer, Responder, Result};
 use clap::{Arg, Command};
 use confy;
 use env_logger::{self, Builder};
@@ -225,7 +225,11 @@ async fn music_files(req: HttpRequest, state: web::Data<OperationEnv>) -> Result
     if let IpAddr::V4(src_addr) = req.peer_addr().unwrap().ip() {
         log::info!("Request from {}", src_addr);
         if src_addr == Ipv4Addr::LOCALHOST || state.req_ips.iter().any(|ip| ip == &src_addr) {
-            let path: PathBuf = req.match_info().query("filename").parse().unwrap();
+            let path: PathBuf = req
+                .match_info()
+                .query("filename")
+                .parse()
+                .unwrap_or(PathBuf::new());
             let full_path = state.path.join(path);
             Ok(NamedFile::open(full_path)?)
         } else {
@@ -236,11 +240,54 @@ async fn music_files(req: HttpRequest, state: web::Data<OperationEnv>) -> Result
     }
 }
 
-#[route("/", method = "GET")]
+#[route("/api/filelist/{filename:.*}", method = "GET")]
+async fn api_filelist(req: HttpRequest, state: web::Data<OperationEnv>) -> Result<impl Responder> {
+    let src_addr = req.peer_addr().unwrap().ip();
+    if (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
+        || (src_addr.is_ipv6() && src_addr == Ipv6Addr::LOCALHOST)
+    {
+        let mut result = Vec::new();
+        let path: PathBuf = req
+            .match_info()
+            .query("filename")
+            .parse()
+            .unwrap_or(PathBuf::new());
+        let full_path = state.path.join(path);
+        if let Ok(elements) = full_path.read_dir() {
+            let r = elements.filter(|e| e.is_ok()).collect::<Vec<_>>();
+            for e in r {
+                result.push({
+                    let element = e.unwrap();
+                    let mut n = element.file_name().into_string().unwrap();
+                    if element.file_type().unwrap().is_dir() {
+                        n.push('/');
+                    }
+                    n
+                });
+            }
+        }
+        Ok(web::Json(result))
+    } else {
+        Err(error::ErrorForbidden("403 - Forbidden"))
+    }
+}
+
+#[route("/{filename:.*}", method = "GET")]
 async fn interface(req: HttpRequest, state: web::Data<OperationEnv>) -> Result<NamedFile> {
     let src_addr = req.peer_addr().unwrap().ip();
-    if src_addr == Ipv4Addr::LOCALHOST || src_addr == Ipv6Addr::LOCALHOST {
-        let path: PathBuf = req.match_info().query("filename").parse().unwrap();
+    log::info!("Request from {}", src_addr);
+    if (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
+        || (src_addr.is_ipv6() && src_addr == Ipv6Addr::LOCALHOST)
+    {
+        let mut path: PathBuf = req
+            .match_info()
+            .query("filename")
+            .parse()
+            .unwrap_or(PathBuf::new());
+        if path.as_path().as_os_str().is_empty() {
+            // I could use path.to_os_string() as well but then path wouldn't be borrowed
+            path = Path::new("index.html").to_path_buf();
+        }
         let full_path = Path::new("./web/").join(path);
         Ok(NamedFile::open(full_path)?)
     } else {
@@ -253,6 +300,7 @@ async fn run_webhandler(op: OperationEnv) -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(op.clone()))
+            .service(api_filelist)
             .service(music_files)
             .service(interface)
 
