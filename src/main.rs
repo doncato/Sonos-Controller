@@ -257,10 +257,13 @@ async fn api_filelist(req: HttpRequest, state: web::Data<OperationEnv>) -> Resul
             let r = elements.filter(|e| e.is_ok()).collect::<Vec<_>>();
             for e in r {
                 result.push({
-                    let element = e.unwrap();
+                    let element = e.unwrap(); // It should be safe to call unwrap here, as r only contains elements which passed the 'is_ok()' check
                     let mut n = element.file_name().into_string().unwrap();
                     if element.file_type().unwrap().is_dir() {
                         n.push('/');
+                    }
+                    if n.starts_with('.') {
+                        continue
                     }
                     n
                 });
@@ -338,6 +341,7 @@ async fn main() {
     let handler = thread::spawn(|| run_webhandler(op).unwrap());
 
     // This is just temporary for testing
+    /*
     let interaction = thread::spawn(|| async move {
         thread::sleep(Duration::from_secs(1));
         log::info!("Moin");
@@ -356,5 +360,6 @@ async fn main() {
         }
     });
     interaction.join().unwrap().await;
+    */
     handler.join().unwrap();
 }

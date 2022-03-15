@@ -23,6 +23,7 @@
 
     </head>
     <body>
+        <div class=marker-list>Content</div>
         <div class="content">
             <h2>Sonos Controller</h2>
             <h4>Control Sonos Speaker in your network</h4>
@@ -40,15 +41,29 @@
                 var loc = obj.slice(5,);
                 getFiles(loc)
             }
+            function fileButtonBack(obj_id) {
+                var pathnow = document.getElementById(obj_id).innerHTML;
+                var path = pathnow.split('/').slice(0,-2).join('/');
+                getFiles(path)
+                console.log(path)
+            }
 
             function writeFiles(data, loc) {
-                var str = `<b>${loc}</b><br><ul>`;
+                var str = `<div class='header'><div class='back-btn'><button id='btn-back' onclick='fileButtonBack("location")'>← back</button></div><div id='location'>${loc}</div></div><ul>`;
+                var last_char = "";
                 for (var i = 0; i < data.length; i++) {
                     var e = data[i]
-                    str += "<li><button onclick='fileButtonHandler(this.id)' " + `id='file-${e}'>` + e + "</button></li>"
+                    var first_char = e.toLowerCase()[0]
+                    if (last_char !== e) {
+                        last_char = first_char
+                        var jumper = `<span class='marker' id='${first_char}'></span>`
+                    }
+                    str += "<li><button onclick='fileButtonHandler(this.id)' " + `id='file-${e}'>` + e + "</button>" + jumper + "</li>"
                 }
                 str += "</ul>"
                 document.getElementById("filelist").innerHTML = str;
+
+                document.getElementsByClassName("marker")
             }
 
             function getFiles(loc) {

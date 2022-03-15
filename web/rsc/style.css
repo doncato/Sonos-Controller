@@ -2,6 +2,9 @@
     background-color: #f3f3f3;
     font-family: "Helvetica, Arial, Sans-Serif, Monospace";
 }
+body {
+    margin: 0;
+}
 ul {
     padding: 0;
     width: fit-content;
@@ -20,10 +23,39 @@ button {
 }
 
 .content {
+    width: 80%;
     max-width: 80%;
-    text-align: left;
     margin: 32px;
     margin-left: auto;
     margin-right: auto;
     text-align: center;
+}
+.header {
+    text-align: left;
+}
+.back-btn {
+    width: 20%;
+    max-width: 20%;
+    display: inline-block;
+}
+#btn-back {
+    border-radius: 5px;
+    border: 0.5px solid #00D000;
+    background-color: #00D000;
+}
+#location {
+    display: inline-block;
+    width: 60%;
+    max-width: 60%;
+    font-weight: bold;
+    text-align: center;
+}
+
+.marker-list {
+    width: 1em;
+    height: 100%;
+    position: sticky;
+    left: 0;
+    top: 0;
+    background-color: #000080
 }
