@@ -23,7 +23,7 @@
 
     </head>
     <body>
-        <div class=marker-list>Content</div>
+        <div id=marker-list></div>
         <div class="content">
             <h2>Sonos Controller</h2>
             <h4>Control Sonos Speaker in your network</h4>
@@ -32,43 +32,69 @@
             </noscript>
             <hr>
             <b>Available music files</b>
+            <div class='header'>
+                <div class='back-btn'>
+                    <button id='btn-back' onclick='fileButtonBack("location")'>
+                        ← back
+                    </button>
+                </div>
+                <div id='location'>
+                    /
+                </div>
+            </div>
             <div id="filelist">
                 Not Found
             </div>
         </div>
         <script>
             function fileButtonHandler(obj) {
-                var loc = obj.slice(5,);
+                var loc = document.getElementById('location').innerHTML + obj.slice(5,);
                 getFiles(loc)
             }
-            function fileButtonBack(obj_id) {
-                var pathnow = document.getElementById(obj_id).innerHTML;
-                var path = pathnow.split('/').slice(0,-2).join('/');
+            function fileButtonBack() {
+                var pathnow = document.getElementById('location').innerHTML;
+                if (pathnow.endsWith('/')) {
+                    var overhead = -2;
+                } else {
+                    var overhead = -1;
+                }
+                var path = pathnow.split('/').slice(0,overhead).join('/') + '/';
                 getFiles(path)
-                console.log(path)
             }
 
             function writeFiles(data, loc) {
-                var str = `<div class='header'><div class='back-btn'><button id='btn-back' onclick='fileButtonBack("location")'>← back</button></div><div id='location'>${loc}</div></div><ul>`;
+                document.getElementById("location").innerHTML = loc;
+                var str = "<ul>";
                 var last_char = "";
+                data.sort();
                 for (var i = 0; i < data.length; i++) {
+                    var jumper = "";
                     var e = data[i]
                     var first_char = e.toLowerCase()[0]
-                    if (last_char !== e) {
+                    if (last_char !== first_char) {
                         last_char = first_char
-                        var jumper = `<span class='marker' id='${first_char}'></span>`
+                        jumper = `<span class='marker' id='${first_char}'></span>`
                     }
                     str += "<li><button onclick='fileButtonHandler(this.id)' " + `id='file-${e}'>` + e + "</button>" + jumper + "</li>"
                 }
                 str += "</ul>"
                 document.getElementById("filelist").innerHTML = str;
 
-                document.getElementsByClassName("marker")
+                let markers = [];
+                let ms = document.getElementsByClassName("marker");
+                for (var i = 0; i < ms.length; i++) {
+                    markers.push(`<a href='#${ms[i].id}'>${ms[i].id.toUpperCase()}</a>`);
+                }
+                document.getElementById("marker-list").innerHTML = markers.join("<br>");
             }
 
             function getFiles(loc) {
                 const xhr = new XMLHttpRequest()
-                var path = "/" + loc
+                if (!loc.startsWith("/")) {
+                    var path = "/" + loc;
+                } else {
+                    var path = loc;
+                }
                 xhr.open("GET", `http://${location.host}/api/filelist${path}`)
                 xhr.send()
                 // When the Request is completed

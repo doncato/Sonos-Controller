@@ -263,13 +263,25 @@ async fn api_filelist(req: HttpRequest, state: web::Data<OperationEnv>) -> Resul
                         n.push('/');
                     }
                     if n.starts_with('.') {
-                        continue
+                        continue;
                     }
                     n
                 });
             }
         }
         Ok(web::Json(result))
+    } else {
+        Err(error::ErrorForbidden("403 - Forbidden"))
+    }
+}
+
+#[route("/api/speakers/{filename:.*}", method = "GET")]
+async fn api_speakers(req: HttpRequest, state: web::Data<OperationEnv>) -> Result<impl Responder> {
+    let src_addr = req.peer_addr().unwrap().ip();
+    if (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
+        || (src_addr.is_ipv6() && src_addr == Ipv6Addr::LOCALHOST)
+    {
+        Ok(web::Json(state.req_ips))
     } else {
         Err(error::ErrorForbidden("403 - Forbidden"))
     }
@@ -341,7 +353,6 @@ async fn main() {
     let handler = thread::spawn(|| run_webhandler(op).unwrap());
 
     // This is just temporary for testing
-    /*
     let interaction = thread::spawn(|| async move {
         thread::sleep(Duration::from_secs(1));
         log::info!("Moin");
@@ -360,6 +371,5 @@ async fn main() {
         }
     });
     interaction.join().unwrap().await;
-    */
     handler.join().unwrap();
 }

@@ -2,9 +2,11 @@
     background-color: #f3f3f3;
     font-family: "Helvetica, Arial, Sans-Serif, Monospace";
 }
-body {
-    margin: 0;
+a, a:after, a:before {
+    text-decoration: none;
+    color: initial;
 }
+
 ul {
     padding: 0;
     width: fit-content;
@@ -17,6 +19,7 @@ ul li {
 }
 button {
     border: none;
+    cursor: pointer;
     padding: 0;
     font-family: initial;
     font-size: initial;
@@ -40,7 +43,7 @@ button {
 }
 #btn-back {
     border-radius: 5px;
-    border: 0.5px solid #00D000;
+    border: 2.5px solid #00D000;
     background-color: #00D000;
 }
 #location {
@@ -51,11 +54,14 @@ button {
     text-align: center;
 }
 
-.marker-list {
+#marker-list {
     width: 1em;
     height: 100%;
+    min-height: 100%;
+    max-height: 100%;
     position: sticky;
     left: 0;
-    top: 0;
-    background-color: #000080
+    top: 8px;
+    text-align: center;
+    border: 1px solid #0000D0;
 }
