@@ -46,7 +46,7 @@ button {
     border: 2.5px solid #00D000;
     background-color: #00D000;
 }
-#location {
+#info-bar {
     display: inline-block;
     width: 60%;
     max-width: 60%;

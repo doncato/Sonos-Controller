@@ -31,28 +31,32 @@
                 This site relies on JavaScript.
             </noscript>
             <hr>
-            <b>Available music files</b>
+            <b id="description">Available music files</b>
             <div class='header'>
                 <div class='back-btn'>
-                    <button id='btn-back' onclick='fileButtonBack("location")'>
+                    <button id='btn-back' onclick='fileButtonBack("info-bar")'>
                         ← back
                     </button>
                 </div>
-                <div id='location'>
+                <div id='info-bar'>
                     /
                 </div>
             </div>
-            <div id="filelist">
+            <div id="datalist">
                 Not Found
             </div>
         </div>
         <script>
             function fileButtonHandler(obj) {
-                var loc = document.getElementById('location').innerHTML + obj.slice(5,);
-                getFiles(loc)
+                var loc = document.getElementById('info-bar').innerHTML + obj.slice(5,);
+                if (loc.endsWith('/')) {
+                    getFiles(loc)
+                } else {
+                    getSpeaker("", loc)
+                }
             }
             function fileButtonBack() {
-                var pathnow = document.getElementById('location').innerHTML;
+                var pathnow = document.getElementById('info-bar').innerHTML;
                 if (pathnow.endsWith('/')) {
                     var overhead = -2;
                 } else {
@@ -61,9 +65,39 @@
                 var path = pathnow.split('/').slice(0,overhead).join('/') + '/';
                 getFiles(path)
             }
+            function speakerButtonHandler(obj, path) {
+                var spk = obj.slice(8,);
+                const xhr = new XMLHttpRequest();
+                if (path.startsWith('/')) {
+                    path = path.slice(1,);
+                }
+                xhr.open("GET", `http://${location.host}/api/control/play/${spk}/${path}`)
+                xhr.send()
+                // When the Request is completed
+                xhr.onload = function() {
+                    if (xhr.status === 200) {
+                        getFiles("")
+                    } else {
+                        console.log("Failed to Play")
+                    }
+                }
+                // When a network error is encountered
+                xhr.onerror = function() {
+                    console.log("Failed to get response")
+                }
+                // Log progress
+                xhr.onprogress = function(e) {
+                    if (e.lengthComputable) {
+                        console.log(`${e.loaded} B of ${e.total} B loaded...`)
+                    } else {
+                        console.log(`${e.loaded} B loaded...`)
+                    }
+                }
+            }
 
             function writeFiles(data, loc) {
-                document.getElementById("location").innerHTML = loc;
+                document.getElementById("description").innerHTML = "Available music files";
+                document.getElementById("info-bar").innerHTML = loc;
                 var str = "<ul>";
                 var last_char = "";
                 data.sort();
@@ -78,7 +112,7 @@
                     str += "<li><button onclick='fileButtonHandler(this.id)' " + `id='file-${e}'>` + e + "</button>" + jumper + "</li>"
                 }
                 str += "</ul>"
-                document.getElementById("filelist").innerHTML = str;
+                document.getElementById("datalist").innerHTML = str;
 
                 let markers = ["<a href='#○'>○</a>"];
                 let ms = document.getElementsByClassName("marker");
@@ -105,6 +139,47 @@
                         writeFiles(data, path)
                     } else {
                         console.log("No filelist available")
+                    }
+                }
+                // When a network error is encountered
+                xhr.onerror = function() {
+                    console.log("Failed to get filelist")
+                }
+                // Log progress
+                xhr.onprogress = function(e) {
+                    if (e.lengthComputable) {
+                        console.log(`${e.loaded} B of ${e.total} B loaded...`)
+                    } else {
+                        console.log(`${e.loaded} B loaded...`)
+                    }
+                }
+            }
+
+            function writeSpeaker(data, path) {
+                document.getElementById("description").innerHTML = "Available speakers";
+                document.getElementById("info-bar").innerHTML = path;
+                var str = "<ul>";
+                for (var i = 0; i < data.length; i++) {
+                    var e = data[i];
+                    str += `<li><button onclick='speakerButtonHandler(this.id, "${path}")'`  + `id='speaker-${e.ip}'>` + e.ip + ` (${e.trackname} [${e.trackelapsed} / ${e.trackduration})s]` + "</button></li>";
+                }
+                str += "</ul>"
+                document.getElementById("datalist").innerHTML = str;
+                document.getElementById("marker-list").innerHTML = "<a href='#○'>○</a>";
+            }
+
+            function getSpeaker(spk, path) {
+                const xhr = new XMLHttpRequest();
+                xhr.open("GET", `http://${location.host}/api/speakers/${spk}`)
+                xhr.send()
+                // When the Request is completed
+                xhr.onload = function() {
+                    if (xhr.status === 200) {
+                        data = JSON.parse(xhr.responseText)
+                        console.log(data.count)
+                        writeSpeaker(data, path)
+                    } else {
+                        console.log("No speakerlist available")
                     }
                 }
                 // When a network error is encountered

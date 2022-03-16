@@ -181,24 +181,29 @@ impl OperationEnv {
 struct ApiSpeaker {
     ip: Ipv4Addr,
     trackname: String,
-    trackdur: u32,
-    trackelp: u32,
+    trackduration: u32,
+    trackelapsed: u32,
     volume: u16,
 }
 impl ApiSpeaker {
     async fn from_spk(spk: &Speaker) -> Self {
-        let ip: Ipv4Addr = Ipv4Addr::from_str(spk.device().url().host().unwrap_or("127.0.0.1")).unwrap_or(Ipv4Addr::new(127,0,0,1));
+        let ip: Ipv4Addr = Ipv4Addr::from_str(spk.device().url().host().unwrap_or("0.0.0.0"))
+            .unwrap_or(Ipv4Addr::new(0, 0, 0, 0));
         let track = spk.track().await.unwrap().unwrap();
-        let trackname = format!("{} - {}", track.track().creator().unwrap_or("unknown"), track.track().title());
-        let trackdur = track.duration();
-        let trackelp = track.elapsed();
+        let trackname = format!(
+            "{} - {}",
+            track.track().creator().unwrap_or("unknown"),
+            track.track().title()
+        );
+        let trackduration = track.duration();
+        let trackelapsed = track.elapsed();
         let volume = spk.volume().await.unwrap();
 
         Self {
             ip,
             trackname,
-            trackdur,
-            trackelp,
+            trackduration,
+            trackelapsed,
             volume,
         }
     }
@@ -308,18 +313,70 @@ async fn api_filelist(req: HttpRequest, state: web::Data<OperationEnv>) -> Resul
     }
 }
 
-#[route("/api/speakers/{address:.*}", method = "GET")]
+#[route(r"/api/speakers/{address:.*}", method = "GET")]
 async fn api_speakers(req: HttpRequest, state: web::Data<OperationEnv>) -> Result<impl Responder> {
     let src_addr = req.peer_addr().unwrap().ip();
     if (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
         || (src_addr.is_ipv6() && src_addr == Ipv6Addr::LOCALHOST)
     {
-        let address: Ipv4Addr = req.match_info().query("address").parse().unwrap_or(Ipv4Addr::new(0,0,0,0));
-        let mut speaker = ApiSpeaker::from_spks(&state.spks).await;
+        let address: Ipv4Addr = req
+            .match_info()
+            .query("address")
+            .parse()
+            .unwrap_or(Ipv4Addr::new(0, 0, 0, 0));
+        let speaker = ApiSpeaker::from_spks(&state.spks).await;
         if address != Ipv4Addr::BROADCAST && address != Ipv4Addr::UNSPECIFIED {
-            speaker = speaker.iter().filter(|e| e.ip == address).collect::<Vec<ApiSpeaker>>();
+            return Ok(web::Json(
+                speaker
+                    .into_iter()
+                    .filter(|e| e.ip == address)
+                    .collect::<Vec<_>>(),
+            ));
+        } else {
+            return Ok(web::Json(speaker));
         }
-        Ok(web::Json(speaker))
+    } else {
+        Err(error::ErrorForbidden("403 - Forbidden"))
+    }
+}
+
+#[route(
+    r"/api/control/play/{address:.*\d*\.\d*\.\d*\.\d*}/{filename:.*}",
+    method = "GET"
+)]
+async fn api_control_play(
+    req: HttpRequest,
+    state: web::Data<OperationEnv>,
+) -> Result<impl Responder> {
+    let src_addr = req.peer_addr().unwrap().ip();
+    if (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
+        || (src_addr.is_ipv6() && src_addr == Ipv6Addr::LOCALHOST)
+    {
+        let address: Ipv4Addr = req.match_info().query("address").parse().unwrap();
+        let file: PathBuf = req.match_info().query("filename").parse().unwrap();
+        let speakers = state
+            .spks
+            .clone()
+            .into_iter()
+            .filter(|e| {
+                address
+                    == Ipv4Addr::from_str(e.device().url().host().unwrap_or("0.0.0.0"))
+                        .unwrap_or(Ipv4Addr::new(0, 0, 0, 0))
+            })
+            .collect::<Vec<Speaker>>();
+        let uri = format!(
+            "http://{}:46864/files/{}",
+            state.ips.first().unwrap(),
+            file.display()
+        )
+        .replace(" ", "%20");
+
+        let speaker = speakers.first().unwrap();
+        log::info!("Setting uri to {}", uri);
+        speaker.set_transport_uri(uri.as_str(), "").await.unwrap();
+        speaker.play().await.unwrap();
+
+        Ok(web::Json(()))
     } else {
         Err(error::ErrorForbidden("403 - Forbidden"))
     }
@@ -354,6 +411,7 @@ async fn run_webhandler(op: OperationEnv) -> std::io::Result<()> {
             .app_data(web::Data::new(op.clone()))
             .service(api_filelist)
             .service(api_speakers)
+            .service(api_control_play)
             .service(music_files)
             .service(interface)
 
@@ -391,7 +449,6 @@ async fn main() {
     let handler = thread::spawn(|| run_webhandler(op).unwrap());
 
     // This is just temporary for testing
-    /*
     let interaction = thread::spawn(|| async move {
         thread::sleep(Duration::from_secs(1));
         log::info!("Moin");
@@ -410,6 +467,5 @@ async fn main() {
         }
     });
     interaction.join().unwrap().await;
-    */
     handler.join().unwrap();
 }
