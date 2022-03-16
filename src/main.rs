@@ -177,6 +177,40 @@ impl OperationEnv {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+struct ApiSpeaker {
+    ip: Ipv4Addr,
+    trackname: String,
+    trackdur: u32,
+    trackelp: u32,
+    volume: u16,
+}
+impl ApiSpeaker {
+    async fn from_spk(spk: &Speaker) -> Self {
+        let ip: Ipv4Addr = Ipv4Addr::from_str(spk.device().url().host().unwrap_or("127.0.0.1")).unwrap_or(Ipv4Addr::new(127,0,0,1));
+        let track = spk.track().await.unwrap().unwrap();
+        let trackname = format!("{} - {}", track.track().creator().unwrap_or("unknown"), track.track().title());
+        let trackdur = track.duration();
+        let trackelp = track.elapsed();
+        let volume = spk.volume().await.unwrap();
+
+        Self {
+            ip,
+            trackname,
+            trackdur,
+            trackelp,
+            volume,
+        }
+    }
+    async fn from_spks(spks: &Vec<Speaker>) -> Vec<Self> {
+        let mut r: Vec<Self> = Vec::new();
+        for e in spks.iter() {
+            r.push(Self::from_spk(e).await)
+        }
+        r
+    }
+}
+
 async fn init<'a>(log_level: LevelFilter) -> OperationEnv {
     Builder::new().filter(None, log_level).init();
     log::info!("Initializing . . .");
@@ -223,7 +257,6 @@ async fn init<'a>(log_level: LevelFilter) -> OperationEnv {
 )]
 async fn music_files(req: HttpRequest, state: web::Data<OperationEnv>) -> Result<NamedFile> {
     if let IpAddr::V4(src_addr) = req.peer_addr().unwrap().ip() {
-        log::info!("Request from {}", src_addr);
         if src_addr == Ipv4Addr::LOCALHOST || state.req_ips.iter().any(|ip| ip == &src_addr) {
             let path: PathBuf = req
                 .match_info()
@@ -275,13 +308,18 @@ async fn api_filelist(req: HttpRequest, state: web::Data<OperationEnv>) -> Resul
     }
 }
 
-#[route("/api/speakers/{filename:.*}", method = "GET")]
+#[route("/api/speakers/{address:.*}", method = "GET")]
 async fn api_speakers(req: HttpRequest, state: web::Data<OperationEnv>) -> Result<impl Responder> {
     let src_addr = req.peer_addr().unwrap().ip();
     if (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
         || (src_addr.is_ipv6() && src_addr == Ipv6Addr::LOCALHOST)
     {
-        Ok(web::Json(state.req_ips))
+        let address: Ipv4Addr = req.match_info().query("address").parse().unwrap_or(Ipv4Addr::new(0,0,0,0));
+        let mut speaker = ApiSpeaker::from_spks(&state.spks).await;
+        if address != Ipv4Addr::BROADCAST && address != Ipv4Addr::UNSPECIFIED {
+            speaker = speaker.iter().filter(|e| e.ip == address).collect::<Vec<ApiSpeaker>>();
+        }
+        Ok(web::Json(speaker))
     } else {
         Err(error::ErrorForbidden("403 - Forbidden"))
     }
@@ -290,7 +328,6 @@ async fn api_speakers(req: HttpRequest, state: web::Data<OperationEnv>) -> Resul
 #[route("/{filename:.*}", method = "GET")]
 async fn interface(req: HttpRequest, state: web::Data<OperationEnv>) -> Result<NamedFile> {
     let src_addr = req.peer_addr().unwrap().ip();
-    log::info!("Request from {}", src_addr);
     if (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
         || (src_addr.is_ipv6() && src_addr == Ipv6Addr::LOCALHOST)
     {
@@ -316,6 +353,7 @@ async fn run_webhandler(op: OperationEnv) -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(op.clone()))
             .service(api_filelist)
+            .service(api_speakers)
             .service(music_files)
             .service(interface)
 
@@ -353,6 +391,7 @@ async fn main() {
     let handler = thread::spawn(|| run_webhandler(op).unwrap());
 
     // This is just temporary for testing
+    /*
     let interaction = thread::spawn(|| async move {
         thread::sleep(Duration::from_secs(1));
         log::info!("Moin");
@@ -371,5 +410,6 @@ async fn main() {
         }
     });
     interaction.join().unwrap().await;
+    */
     handler.join().unwrap();
 }

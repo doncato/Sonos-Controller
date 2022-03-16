@@ -53,15 +53,13 @@ button {
     font-weight: bold;
     text-align: center;
 }
-
 #marker-list {
     width: 1em;
-    height: 100%;
-    min-height: 100%;
-    max-height: 100%;
-    position: sticky;
-    left: 0;
+    height: calc(100% - 16px);
+    position: fixed;
     top: 8px;
     text-align: center;
     border: 1px solid #0000D0;
+    border-radius: 5px;
+    overflow: auto;
 }

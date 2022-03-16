@@ -23,9 +23,9 @@
 
     </head>
     <body>
-        <div id=marker-list></div>
+        <div id="marker-list">○</div>
         <div class="content">
-            <h2>Sonos Controller</h2>
+            <h2 id="○">Sonos Controller</h2>
             <h4>Control Sonos Speaker in your network</h4>
             <noscript>
                 This site relies on JavaScript.
@@ -80,7 +80,7 @@
                 str += "</ul>"
                 document.getElementById("filelist").innerHTML = str;
 
-                let markers = [];
+                let markers = ["<a href='#○'>○</a>"];
                 let ms = document.getElementsByClassName("marker");
                 for (var i = 0; i < ms.length; i++) {
                     markers.push(`<a href='#${ms[i].id}'>${ms[i].id.toUpperCase()}</a>`);
