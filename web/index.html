@@ -65,13 +65,17 @@
                 var path = pathnow.split('/').slice(0,overhead).join('/') + '/';
                 getFiles(path)
             }
-            function speakerButtonHandler(obj, path) {
+            function speakerButtonHandler(obj, path, action) {
                 var spk = obj.slice(8,);
                 const xhr = new XMLHttpRequest();
                 if (path.startsWith('/')) {
                     path = path.slice(1,);
                 }
-                xhr.open("GET", `http://${location.host}/api/control/play/${spk}/${path}`)
+                var url = `http://${location.host}/api/control/play/${spk}/${path}`
+                if (action === "n") {
+                    var url = `http://${location.host}/api/control/next/${spk}/${path}`
+                }
+                xhr.open("GET", url)
                 xhr.send()
                 // When the Request is completed
                 xhr.onload = function() {
@@ -161,7 +165,10 @@
                 var str = "<ul>";
                 for (var i = 0; i < data.length; i++) {
                     var e = data[i];
-                    str += `<li><button onclick='speakerButtonHandler(this.id, "${path}")'`  + `id='speaker-${e.ip}'>` + e.ip + ` (${e.trackname} [${e.trackelapsed} / ${e.trackduration})s]` + "</button></li>";
+                    str += `<li>${e.ip} (${e.trackname} [${e.trackelapsed} / ${e.trackduration})s] ` +
+                        `<button class='action' onclick='speakerButtonHandler("speaker-${e.ip}", "${path}", "p")'>Play</button> ` +
+                        `<button class='action' onclick='speakerButtonHandler("speaker-${e.ip}", "${path}", "n")'>Next</button> ` +
+                        "</li>"
                 }
                 str += "</ul>"
                 document.getElementById("datalist").innerHTML = str;

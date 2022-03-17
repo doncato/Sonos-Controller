@@ -189,14 +189,18 @@ impl ApiSpeaker {
     async fn from_spk(spk: &Speaker) -> Self {
         let ip: Ipv4Addr = Ipv4Addr::from_str(spk.device().url().host().unwrap_or("0.0.0.0"))
             .unwrap_or(Ipv4Addr::new(0, 0, 0, 0));
-        let track = spk.track().await.unwrap().unwrap();
-        let trackname = format!(
-            "{} - {}",
-            track.track().creator().unwrap_or("unknown"),
-            track.track().title()
-        );
-        let trackduration = track.duration();
-        let trackelapsed = track.elapsed();
+        let mut trackname = "None".to_string();
+        let mut trackduration = 0;
+        let mut trackelapsed = 0;
+        if let Some(track) = spk.track().await.unwrap() {
+            trackname = format!(
+                "{} - {}",
+                track.track().creator().unwrap_or("unknown"),
+                track.track().title()
+            );
+            trackduration = track.duration();
+            trackelapsed = track.elapsed();
+        }
         let volume = spk.volume().await.unwrap();
 
         Self {
@@ -341,7 +345,64 @@ async fn api_speakers(req: HttpRequest, state: web::Data<OperationEnv>) -> Resul
 }
 
 #[route(
-    r"/api/control/play/{address:.*\d*\.\d*\.\d*\.\d*}/{filename:.*}",
+    r"/api/control/playback/{address:\d*\.\d*\.\d*\.\d*}/{action:.*}",
+    method = "GET"
+)]
+async fn api_control_playback(
+    req: HttpRequest,
+    state: web::Data<OperationEnv>,
+) -> Result<impl Responder> {
+    let src_addr = req.peer_addr().unwrap().ip();
+    if (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
+        || (src_addr.is_ipv6() && src_addr == Ipv6Addr::LOCALHOST)
+    {
+        let action: String = req.match_info().query("action").parse().unwrap();
+        let address: Ipv4Addr = req.match_info().query("address").parse().unwrap();
+        let spks = state
+            .spks
+            .clone()
+            .into_iter()
+            .filter(|e| {
+                address
+                    == Ipv4Addr::from_str(e.device().url().host().unwrap_or("0.0.0.0"))
+                        .unwrap_or(Ipv4Addr::new(0, 0, 0, 0))
+            })
+            .collect::<Vec<Speaker>>();
+        let spk = spks.first().unwrap();
+        match action.as_str() {
+            "play" => {
+                spk.play().await.unwrap();
+                Ok(web::Json(()))
+            }
+            "pause" => {
+                spk.pause().await.unwrap();
+                Ok(web::Json(()))
+            }
+            "stop" => {
+                spk.stop().await.unwrap();
+                Ok(web::Json(()))
+            }
+            "next" => {
+                spk.next().await.unwrap();
+                Ok(web::Json(()))
+            }
+            "previous" => {
+                spk.previous().await.unwrap();
+                Ok(web::Json(()))
+            }
+            "queue-clear" => {
+                spk.clear_queue().await.unwrap();
+                Ok(web::Json(()))
+            }
+            _ => Err(error::ErrorNotFound("404 - Not Found")),
+        }
+    } else {
+        Err(error::ErrorForbidden("403 - Forbidden"))
+    }
+}
+
+#[route(
+    r"/api/control/play/{address:\d*\.\d*\.\d*\.\d*}/{filename:.*}",
     method = "GET"
 )]
 async fn api_control_play(
@@ -374,7 +435,53 @@ async fn api_control_play(
         let speaker = speakers.first().unwrap();
         log::info!("Setting uri to {}", uri);
         speaker.set_transport_uri(uri.as_str(), "").await.unwrap();
-        speaker.play().await.unwrap();
+        if !speaker.is_playing().await.unwrap_or(false) {
+            speaker.play().await.unwrap()
+        }
+
+        Ok(web::Json(()))
+    } else {
+        Err(error::ErrorForbidden("403 - Forbidden"))
+    }
+}
+
+#[route(
+    r"/api/control/next/{address:\d*\.\d*\.\d*\.\d*}/{filename:.*}",
+    method = "GET"
+)]
+async fn api_control_next(
+    req: HttpRequest,
+    state: web::Data<OperationEnv>,
+) -> Result<impl Responder> {
+    let src_addr = req.peer_addr().unwrap().ip();
+    if (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
+        || (src_addr.is_ipv6() && src_addr == Ipv6Addr::LOCALHOST)
+    {
+        let address: Ipv4Addr = req.match_info().query("address").parse().unwrap();
+        let file: PathBuf = req.match_info().query("filename").parse().unwrap();
+        let speakers = state
+            .spks
+            .clone()
+            .into_iter()
+            .filter(|e| {
+                address
+                    == Ipv4Addr::from_str(e.device().url().host().unwrap_or("0.0.0.0"))
+                        .unwrap_or(Ipv4Addr::new(0, 0, 0, 0))
+            })
+            .collect::<Vec<Speaker>>();
+        let uri = format!(
+            "http://{}:46864/files/{}",
+            state.ips.first().unwrap(),
+            file.display()
+        )
+        .replace(" ", "%20");
+
+        let speaker = speakers.first().unwrap();
+        log::info!("Setting uri to {}", uri);
+        speaker.queue_next(uri.as_str(), "").await.unwrap();
+        if !speaker.is_playing().await.unwrap_or(false) {
+            speaker.play().await.unwrap_or(());
+        }
 
         Ok(web::Json(()))
     } else {
@@ -411,7 +518,9 @@ async fn run_webhandler(op: OperationEnv) -> std::io::Result<()> {
             .app_data(web::Data::new(op.clone()))
             .service(api_filelist)
             .service(api_speakers)
+            .service(api_control_playback)
             .service(api_control_play)
+            .service(api_control_next)
             .service(music_files)
             .service(interface)
 
@@ -445,27 +554,7 @@ async fn main() {
     log::debug!("Connected to {} Speaker", op.spks.len());
     log::debug!("Serving HTTP Requests to {}", op.path.display());
 
-    let op_ = op.clone();
     let handler = thread::spawn(|| run_webhandler(op).unwrap());
 
-    // This is just temporary for testing
-    let interaction = thread::spawn(|| async move {
-        thread::sleep(Duration::from_secs(1));
-        log::info!("Moin");
-        for spk in &op_.spks {
-            let spk_name = spk.device().url().host().unwrap_or("unknown");
-            log::info!("Loading Speaker {}", spk_name);
-            for ip in op_.ips.iter() {
-                let uri = format!(
-                    "http://{}:46864/files/Ghostrunner/Daniel%20Deluxe%20-%20Air.mp3",
-                    ip
-                );
-                log::info!("Setting uri to {}", uri);
-                spk.set_transport_uri(uri.as_str(), "").await.unwrap()
-            }
-            spk.play().await.unwrap();
-        }
-    });
-    interaction.join().unwrap().await;
     handler.join().unwrap();
 }
