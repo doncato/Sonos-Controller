@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
+use urlencoding::{encode, decode};
 use tokio;
 
 #[derive(Serialize, Deserialize)]
@@ -267,11 +268,12 @@ async fn init<'a>(log_level: LevelFilter) -> OperationEnv {
 async fn music_files(req: HttpRequest, state: web::Data<OperationEnv>) -> Result<NamedFile> {
     if let IpAddr::V4(src_addr) = req.peer_addr().unwrap().ip() {
         if src_addr == Ipv4Addr::LOCALHOST || state.req_ips.iter().any(|ip| ip == &src_addr) {
-            let path: PathBuf = req
+            let req_path = req
                 .match_info()
                 .query("filename")
                 .parse()
-                .unwrap_or(PathBuf::new());
+                .unwrap_or("".to_string());
+            let path: PathBuf = PathBuf::from_str(&decode(&req_path).expect("UTF-8").into_owned()).unwrap();
             let full_path = state.path.join(path);
             Ok(NamedFile::open(full_path)?)
         } else {
@@ -425,16 +427,15 @@ async fn api_control_play(
                         .unwrap_or(Ipv4Addr::new(0, 0, 0, 0))
             })
             .collect::<Vec<Speaker>>();
-        let uri = format!(
-            "http://{}:46864/files/{}",
-            state.ips.first().unwrap(),
+        let dirty_uri = format!(
+            "{}",
             file.display()
-        )
-        .replace(" ", "%20");
+        );
+        let uri = format!("http://{}:46864/files/{}", state.ips.first().unwrap(), encode(&dirty_uri).into_owned());
 
         let speaker = speakers.first().unwrap();
         log::info!("Setting uri to {}", uri);
-        speaker.set_transport_uri(uri.as_str(), "").await.unwrap();
+        speaker.set_transport_uri(&uri, "").await.unwrap();
         if !speaker.is_playing().await.unwrap_or(false) {
             speaker.play().await.unwrap()
         }
