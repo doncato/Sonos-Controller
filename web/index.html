@@ -20,195 +20,71 @@
         <link rel="shortcut icon" type="image/png" href="/rsc/logo.png" />
         <link rel="icon" type="image/png" href="/img/logo.png" />
         <link rel="stylesheet" href="/rsc/style.css" />
+        <!--Bootstrap CSS from jsdelivr-->
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"/>
 
     </head>
     <body>
-        <div id="marker-list">○</div>
-        <div class="content">
-            <h2 id="○">Sonos Controller</h2>
-            <h4>Control Sonos Speaker in your network</h4>
-            <noscript>
-                This site relies on JavaScript.
-            </noscript>
-            <hr>
-            <b id="description">Available music files</b>
-            <div class='header'>
-                <div class='back-btn'>
-                    <button id='btn-back' onclick='fileButtonBack("info-bar")'>
-                        ← back
-                    </button>
+        <div class="container-fluid">
+            <div class="row text-center">
+                <h2 id="○">Sonos Controller</h2>
+                <noscript>
+                    This site relies on JavaScript.
+                </noscript>
+                <hr>
+            </div>
+            <div class="row">
+                <div id="marker-list" class="col-2">
+                    ○
                 </div>
-                <div id='info-bar'>
-                    /
+                <div class="col-8 content">
+                    <b id="description">Available music files</b>
+                    <div class='header'>
+                        <div class='back-btn d-inline-block'>
+                            <button id='btn-back' type="button" onclick='fileButtonBack("info-bar")' class="btn btn-primary rounded-pill">
+                                ← back
+                            </button>
+                        </div>
+                        <div id='info-bar' class="d-inline-block text-center">
+                            /
+                        </div>
+                    </div>
+                    <div id="datalist">
+                        Not Found
+                    </div>
+                </div>
+                <div class="col-2">
                 </div>
             </div>
-            <div id="datalist">
-                Not Found
+            <div class="row">
+                <div class="container position-fixed p-3 bottom-0 text-center bg-dark text-white">
+                    <div class="progress prog-bar mb-3">
+                        <div id="prog-bar" class="progress-bar prog-bar"></div>
+                    </div>
+                    <div class="row bg-dark">
+                        <div class="col-3 bg-dark">
+                            <form action="#" class="bg-dark text-white">
+                                <select class="form-select form-select-sm" id="device">
+                                    <option value="">No device Available</option>
+                                </select>
+                            </form>
+                        </div>
+                        <div id="title" class="col-6 bg-dark text-white text-center overflow-hidden">
+                            Unknown Artist - Unknown Title (Unknown Album)
+                        </div>
+                        <div class="col-3 bg-dark text-white">
+                            <button id="play" class="btn btn-primary rounded-pill" onclick="play()">Play</button>
+                            <div class="btn-group bg-dark">
+                                <button id="v-inc" class="btn btn-primary" onclick='vlmUp()'>↑</button>
+                                <button id="v-dec" class="btn btn-primary" onclick='vlmDw()'>↓</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
-        <script>
-            function fileButtonHandler(obj) {
-                var loc = document.getElementById('info-bar').innerHTML + obj.slice(5,);
-                if (loc.endsWith('/')) {
-                    getFiles(loc)
-                } else {
-                    getSpeaker("", loc)
-                }
-            }
-            function fileButtonBack() {
-                var pathnow = document.getElementById('info-bar').innerHTML;
-                if (pathnow.endsWith('/')) {
-                    var overhead = -2;
-                } else {
-                    var overhead = -1;
-                }
-                var path = pathnow.split('/').slice(0,overhead).join('/') + '/';
-                getFiles(path)
-            }
-            function speakerButtonHandler(obj, path, action) {
-                var spk = obj.slice(8,);
-                const xhr = new XMLHttpRequest();
-                if (path.startsWith('/')) {
-                    path = path.slice(1,);
-                }
-                var url = `http://${location.host}/api/control/play/${spk}/${path}`
-                if (action === "n") {
-                    var url = `http://${location.host}/api/control/next/${spk}/${path}`
-                }
-                xhr.open("GET", url)
-                xhr.send()
-                // When the Request is completed
-                xhr.onload = function() {
-                    if (xhr.status === 200) {
-                        getFiles("")
-                    } else {
-                        console.log("Failed to Play")
-                    }
-                }
-                // When a network error is encountered
-                xhr.onerror = function() {
-                    console.log("Failed to get response")
-                }
-                // Log progress
-                xhr.onprogress = function(e) {
-                    if (e.lengthComputable) {
-                        console.log(`${e.loaded} B of ${e.total} B loaded...`)
-                    } else {
-                        console.log(`${e.loaded} B loaded...`)
-                    }
-                }
-            }
-
-            function writeFiles(data, loc) {
-                document.getElementById("description").innerHTML = "Available music files";
-                document.getElementById("info-bar").innerHTML = loc;
-                var str = "<ul>";
-                var last_char = "";
-                data.sort();
-                for (var i = 0; i < data.length; i++) {
-                    var jumper = "";
-                    var e = data[i]
-                    var first_char = e.toLowerCase()[0]
-                    if (last_char !== first_char) {
-                        last_char = first_char
-                        jumper = `<span class='marker' id='${first_char}'></span>`
-                    }
-                    str += "<li><button onclick='fileButtonHandler(this.id)' " + `id='file-${e}'>` + e + "</button>" + jumper + "</li>"
-                }
-                str += "</ul>"
-                document.getElementById("datalist").innerHTML = str;
-
-                let markers = ["<a href='#○'>○</a>"];
-                let ms = document.getElementsByClassName("marker");
-                for (var i = 0; i < ms.length; i++) {
-                    markers.push(`<a href='#${ms[i].id}'>${ms[i].id.toUpperCase()}</a>`);
-                }
-                document.getElementById("marker-list").innerHTML = markers.join("<br>");
-            }
-
-            function getFiles(loc) {
-                const xhr = new XMLHttpRequest()
-                if (!loc.startsWith("/")) {
-                    var path = "/" + loc;
-                } else {
-                    var path = loc;
-                }
-                xhr.open("GET", `http://${location.host}/api/filelist${path}`)
-                xhr.send()
-                // When the Request is completed
-                xhr.onload = function() {
-                    if (xhr.status === 200) {
-                        data = JSON.parse(xhr.responseText)
-                        console.log(data.count)
-                        writeFiles(data, path)
-                    } else {
-                        console.log("No filelist available")
-                    }
-                }
-                // When a network error is encountered
-                xhr.onerror = function() {
-                    console.log("Failed to get filelist")
-                }
-                // Log progress
-                xhr.onprogress = function(e) {
-                    if (e.lengthComputable) {
-                        console.log(`${e.loaded} B of ${e.total} B loaded...`)
-                    } else {
-                        console.log(`${e.loaded} B loaded...`)
-                    }
-                }
-            }
-
-            function writeSpeaker(data, path) {
-                document.getElementById("description").innerHTML = "Available speakers";
-                document.getElementById("info-bar").innerHTML = path;
-                var str = "<ul>";
-                for (var i = 0; i < data.length; i++) {
-                    var e = data[i];
-                    str += `<li>${e.ip} (${e.trackname} [${e.trackelapsed} / ${e.trackduration})s] ` +
-                        `<button class='action' onclick='speakerButtonHandler("speaker-${e.ip}", "${path}", "p")'>Play</button> ` +
-                        `<button class='action' onclick='speakerButtonHandler("speaker-${e.ip}", "${path}", "n")'>Next</button> ` +
-                        "</li>"
-                }
-                str += "</ul>"
-                document.getElementById("datalist").innerHTML = str;
-                document.getElementById("marker-list").innerHTML = "<a href='#○'>○</a>";
-            }
-
-            function getSpeaker(spk, path) {
-                const xhr = new XMLHttpRequest();
-                xhr.open("GET", `http://${location.host}/api/speakers/${spk}`)
-                xhr.send()
-                // When the Request is completed
-                xhr.onload = function() {
-                    if (xhr.status === 200) {
-                        data = JSON.parse(xhr.responseText)
-                        console.log(data.count)
-                        writeSpeaker(data, path)
-                    } else {
-                        console.log("No speakerlist available")
-                    }
-                }
-                // When a network error is encountered
-                xhr.onerror = function() {
-                    console.log("Failed to get filelist")
-                }
-                // Log progress
-                xhr.onprogress = function(e) {
-                    if (e.lengthComputable) {
-                        console.log(`${e.loaded} B of ${e.total} B loaded...`)
-                    } else {
-                        console.log(`${e.loaded} B loaded...`)
-                    }
-                }
-            }
-
-            // Make a request to the Backend and ask for a filelist
-            getFiles("")
-
-
-
-
-        </script>
+        <script src="rsc/scr.js"></script>
+        <!--Bootstrap JS from jsdelivr-->
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     </body>
 </html>

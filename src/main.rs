@@ -15,8 +15,8 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
-use urlencoding::{encode, decode};
 use tokio;
+use urlencoding::{decode, encode};
 
 #[derive(Serialize, Deserialize)]
 struct Config {
@@ -159,9 +159,10 @@ struct OperationEnv {
     ips: Vec<Ipv4Addr>,
     req_ips: Vec<Ipv4Addr>,
     spks_ips: HashMap<Speaker, Ipv4Addr>,
+    server_mode: bool,
 }
 impl OperationEnv {
-    fn new(path: Box<Path>, spks: Vec<Speaker>, ips: Vec<Ipv4Addr>) -> Self {
+    fn new(path: Box<Path>, spks: Vec<Speaker>, ips: Vec<Ipv4Addr>, server_mode: bool) -> Self {
         Self {
             path,
             spks: spks.clone(),
@@ -174,6 +175,7 @@ impl OperationEnv {
                 })
                 .collect(),
             spks_ips: HashMap::new(),
+            server_mode,
         }
     }
 }
@@ -185,6 +187,7 @@ struct ApiSpeaker {
     trackduration: u32,
     trackelapsed: u32,
     volume: u16,
+    is_playing: bool,
 }
 impl ApiSpeaker {
     async fn from_spk(spk: &Speaker) -> Self {
@@ -203,6 +206,7 @@ impl ApiSpeaker {
             trackelapsed = track.elapsed();
         }
         let volume = spk.volume().await.unwrap();
+        let is_playing = spk.is_playing().await.unwrap_or(false);
 
         Self {
             ip,
@@ -210,6 +214,7 @@ impl ApiSpeaker {
             trackduration,
             trackelapsed,
             volume,
+            is_playing,
         }
     }
     async fn from_spks(spks: &Vec<Speaker>) -> Vec<Self> {
@@ -221,7 +226,7 @@ impl ApiSpeaker {
     }
 }
 
-async fn init<'a>(log_level: LevelFilter) -> OperationEnv {
+async fn init<'a>(log_level: LevelFilter, server_mode: bool) -> OperationEnv {
     Builder::new().filter(None, log_level).init();
     log::info!("Initializing . . .");
 
@@ -257,7 +262,7 @@ async fn init<'a>(log_level: LevelFilter) -> OperationEnv {
     }
 
     log::debug!("Trying to connect to configured speaker . . .");
-    OperationEnv::new(path, cfg.to_speaker().await, addrs)
+    OperationEnv::new(path, cfg.to_speaker().await, addrs, server_mode)
 }
 
 #[route(
@@ -273,7 +278,8 @@ async fn music_files(req: HttpRequest, state: web::Data<OperationEnv>) -> Result
                 .query("filename")
                 .parse()
                 .unwrap_or("".to_string());
-            let path: PathBuf = PathBuf::from_str(&decode(&req_path).expect("UTF-8").into_owned()).unwrap();
+            let path: PathBuf =
+                PathBuf::from_str(&decode(&req_path).expect("UTF-8").into_owned()).unwrap();
             let full_path = state.path.join(path);
             Ok(NamedFile::open(full_path)?)
         } else {
@@ -287,7 +293,8 @@ async fn music_files(req: HttpRequest, state: web::Data<OperationEnv>) -> Result
 #[route("/api/filelist/{filename:.*}", method = "GET")]
 async fn api_filelist(req: HttpRequest, state: web::Data<OperationEnv>) -> Result<impl Responder> {
     let src_addr = req.peer_addr().unwrap().ip();
-    if (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
+    if (state.server_mode)
+        || (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
         || (src_addr.is_ipv6() && src_addr == Ipv6Addr::LOCALHOST)
     {
         let mut result = Vec::new();
@@ -322,7 +329,8 @@ async fn api_filelist(req: HttpRequest, state: web::Data<OperationEnv>) -> Resul
 #[route(r"/api/speakers/{address:.*}", method = "GET")]
 async fn api_speakers(req: HttpRequest, state: web::Data<OperationEnv>) -> Result<impl Responder> {
     let src_addr = req.peer_addr().unwrap().ip();
-    if (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
+    if (state.server_mode)
+        || (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
         || (src_addr.is_ipv6() && src_addr == Ipv6Addr::LOCALHOST)
     {
         let address: Ipv4Addr = req
@@ -355,7 +363,8 @@ async fn api_control_playback(
     state: web::Data<OperationEnv>,
 ) -> Result<impl Responder> {
     let src_addr = req.peer_addr().unwrap().ip();
-    if (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
+    if (state.server_mode)
+        || (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
         || (src_addr.is_ipv6() && src_addr == Ipv6Addr::LOCALHOST)
     {
         let action: String = req.match_info().query("action").parse().unwrap();
@@ -396,6 +405,14 @@ async fn api_control_playback(
                 spk.clear_queue().await.unwrap();
                 Ok(web::Json(()))
             }
+            "v-inc" => {
+                spk.set_volume_relative(1).await.unwrap();
+                Ok(web::Json(()))
+            }
+            "v-dec" => {
+                spk.set_volume_relative(-1).await.unwrap();
+                Ok(web::Json(()))
+            }
             _ => Err(error::ErrorNotFound("404 - Not Found")),
         }
     } else {
@@ -412,7 +429,8 @@ async fn api_control_play(
     state: web::Data<OperationEnv>,
 ) -> Result<impl Responder> {
     let src_addr = req.peer_addr().unwrap().ip();
-    if (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
+    if (state.server_mode)
+        || (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
         || (src_addr.is_ipv6() && src_addr == Ipv6Addr::LOCALHOST)
     {
         let address: Ipv4Addr = req.match_info().query("address").parse().unwrap();
@@ -427,11 +445,12 @@ async fn api_control_play(
                         .unwrap_or(Ipv4Addr::new(0, 0, 0, 0))
             })
             .collect::<Vec<Speaker>>();
-        let dirty_uri = format!(
-            "{}",
-            file.display()
+        let dirty_uri = format!("{}", file.display());
+        let uri = format!(
+            "http://{}:46864/files/{}",
+            state.ips.first().unwrap(),
+            encode(&dirty_uri).into_owned()
         );
-        let uri = format!("http://{}:46864/files/{}", state.ips.first().unwrap(), encode(&dirty_uri).into_owned());
 
         let speaker = speakers.first().unwrap();
         log::info!("Setting uri to {}", uri);
@@ -455,7 +474,8 @@ async fn api_control_next(
     state: web::Data<OperationEnv>,
 ) -> Result<impl Responder> {
     let src_addr = req.peer_addr().unwrap().ip();
-    if (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
+    if (state.server_mode)
+        || (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
         || (src_addr.is_ipv6() && src_addr == Ipv6Addr::LOCALHOST)
     {
         let address: Ipv4Addr = req.match_info().query("address").parse().unwrap();
@@ -493,7 +513,8 @@ async fn api_control_next(
 #[route("/{filename:.*}", method = "GET")]
 async fn interface(req: HttpRequest, state: web::Data<OperationEnv>) -> Result<NamedFile> {
     let src_addr = req.peer_addr().unwrap().ip();
-    if (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
+    if (state.server_mode)
+        || (src_addr.is_ipv4() && src_addr == Ipv4Addr::LOCALHOST)
         || (src_addr.is_ipv6() && src_addr == Ipv6Addr::LOCALHOST)
     {
         let mut path: PathBuf = req
@@ -543,6 +564,12 @@ async fn main() {
                 .long("debug")
                 .help("Change log level to debug"),
         )
+        .arg(
+            Arg::new("server-mode")
+                .short('s')
+                .long("server")
+                .help("Set to server mode, meaning the frontend will be reachable from anywhere"),
+        )
         .get_matches();
 
     let llvl = if args.is_present("debug") {
@@ -550,7 +577,8 @@ async fn main() {
     } else {
         LevelFilter::Info
     };
-    let op = init(llvl).await;
+    let server_mode = args.is_present("server-mode");
+    let op = init(llvl, server_mode).await;
     log::info!("Initialized.");
     log::debug!("Connected to {} Speaker", op.spks.len());
     log::debug!("Serving HTTP Requests to {}", op.path.display());
