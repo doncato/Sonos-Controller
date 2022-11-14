@@ -8,6 +8,7 @@ function fileButtonHandler(obj) {
     if (loc.endsWith('/')) {
         getFiles(loc)
     } else {
+        playFile(loc)
         getSpeaker("", loc)
     }
 }
@@ -159,8 +160,98 @@ function getSpeaker(spk, path) {
     }
 }
 
-function play() {
+function playFile(path) {
     var speaker = getSelectedSpeaker();
+
+    xhr.open("GET", `http://${location.host}/api/control/play/${spk}/${path}`)
+    xhr.send()
+    // When the Request is completed
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            data = JSON.parse(xhr.responseText)
+            console.log(data.count)
+            updateSpeaker()
+        } else {
+            console.log("Can not play file")
+        }
+    }
+    // When a network error is encountered
+    xhr.onerror = function() {
+        console.log("Failed to play file")
+    }
+    // Log progress
+    xhr.onprogress = function(e) {
+        if (e.lengthComputable) {
+            console.log(`${e.loaded} B of ${e.total} B loaded...`)
+        } else {
+            console.log(`${e.loaded} B loaded...`)
+        }
+    }
+}
+
+function updateSpeaker() {
+    var speaker = getSelectedSpeaker();
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", `http://${location.host}/api/speakers/${speaker}`);
+    xhr.send()
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            data = JSON.parse(xhr.responseText)
+            console.log(data.count)
+            console.log(data)
+            var spk = data[0];
+            document.getElementById("title").innerHTML = spk.trackname;
+            document.getElementById("prog-bar").style.width = `${(spk.trackelapsed / spk.trackduration) * 100}%`;
+            document.getElementById("play").innerHTML = spk.is_playing ? "Pause" : "Play";
+        } else {
+            console.log("No speaker available")
+        }
+    }
+    // When a network error is encountered
+    xhr.onerror = function() {
+        console.log("Failed to get speaker")
+    }
+    // Log progress
+    xhr.onprogress = function(e) {
+        if (e.lengthComputable) {
+            console.log(`${e.loaded} B of ${e.total} B loaded...`)
+        } else {
+            console.log(`${e.loaded} B loaded...`)
+        }
+    }
+}
+
+function play() {
+    var btn = document.getElementById("play");
+    var cmd = btn.innerHTML.toLowerCase();
+
+    var speaker = getSelectedSpeaker();
+    const xhr = new XMLHttpRequest()
+    xhr.open("GET", `http://${location.host}/api/control/playback/${speaker}/${cmd}`)
+    xhr.send()
+    // When the Request is completed
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            data = JSON.parse(xhr.responseText)
+            console.log(data.count)
+            updateSpeaker()
+        } else {
+            console.log("Error while trying to set playback")
+        }
+    }
+    // When a network error is encountered
+    xhr.onerror = function() {
+        console.log("Failed to set playback")
+    }
+    // Log progress
+    xhr.onprogress = function(e) {
+        if (e.lengthComputable) {
+            console.log(`${e.loaded} B of ${e.total} B loaded...`)
+        } else {
+            console.log(`${e.loaded} B loaded...`)
+        }
+    }
 }
 
 function chgVlm(inc) {
@@ -170,7 +261,7 @@ function chgVlm(inc) {
     xhr.open("GET", `http://${location.host}/api/control/playback/${speaker}/${cmd}`)
     xhr.send()
     // When the Request is completed
-    xhr.obload = function() {
+    xhr.onload = function() {
         if (xhr.status === 200) {
             data = JSON.parse(xhr.responseText)
             console.log(data.count)
