@@ -1,6 +1,5 @@
 function getSelectedSpeaker() {
     var selection = document.getElementById('device').value;
-    console.log(selection);
     return selection
 }
 
@@ -235,8 +234,6 @@ function updateSpeaker() {
     xhr.onload = function() {
         if (xhr.status === 200) {
             data = JSON.parse(xhr.responseText)
-            console.log(data.count)
-            console.log(data)
             var spk = data[0];
             document.getElementById("title").innerHTML = spk.trackname;
             document.getElementById("prog-bar").style.width = `${(spk.trackelapsed / spk.trackduration) * 100}%`;
@@ -251,11 +248,7 @@ function updateSpeaker() {
     }
     // Log progress
     xhr.onprogress = function(e) {
-        if (e.lengthComputable) {
-            console.log(`${e.loaded} B of ${e.total} B loaded...`)
-        } else {
-            console.log(`${e.loaded} B loaded...`)
-        }
+        return
     }
 }
 
@@ -299,7 +292,7 @@ function chgVlm(inc) {
     // When the Request is completed
     xhr.onload = function() {
         if (xhr.status === 200) {
-            console.log(".")
+            return
         } else {
             console.log("Error while changing volume")
         }
@@ -310,11 +303,7 @@ function chgVlm(inc) {
     }
     // Log progress
     xhr.onprogress = function(e) {
-        if (e.lengthComputable) {
-            console.log(`${e.loaded} B of ${e.total} B loaded...`)
-        } else {
-            console.log(`${e.loaded} B loaded...`)
-        }
+        return
     }
 }
 
@@ -329,6 +318,34 @@ function vlmDw() {
 getFiles("")
 updateSpeakerList()
 updateSpeaker()
+// Update the speakers state periodically
 var interval_1 = setInterval(function() {
     updateSpeaker();
 }, 1000);
+// Use keyboard for some functions
+window.addEventListener("keydown", function (event) {
+  if (event.defaultPrevented) {
+    return; // Do nothing if the event was already processed
+  }
+
+  switch (event.key) {
+    case "ArrowDown":
+      vlmDw();
+      break;
+    case "ArrowUp":
+      vlmUp();
+      break;
+    case "P":
+    case "p":
+      play();
+      break;
+    default:
+      return; // Quit when this doesn't handle the key event.
+  }
+
+  // Cancel the default action to avoid it being handled twice
+  event.preventDefault();
+}, true);
+// the last option dispatches the event to the listener first,
+// then dispatches event to window
+
