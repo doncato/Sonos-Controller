@@ -63,7 +63,7 @@ function speakerButtonHandler(obj, path, action) {
 function writeFiles(data, loc) {
     document.getElementById("description").innerHTML = "Available music files";
     document.getElementById("info-bar").innerHTML = loc;
-    var str = "<ul>";
+    var str = "<ul class=\"p-0\">";
     var last_char = "";
     data.sort();
     for (var i = 0; i < data.length; i++) {
@@ -145,7 +145,7 @@ function updateSpeakerList() {
         if (xhr.status === 200) {
             data = JSON.parse(xhr.responseText)
             console.log(data.count)
-            
+
             obj = document.getElementById("device");
             for (e of data) {
                 obj.innerHTML += `<option value="${e.ip}">${e.ip}</option>\n`
@@ -198,7 +198,7 @@ function getSpeaker(spk, path) {
 
 function playFile(loc) {
     var speaker = getSelectedSpeaker();
-    
+
     const xhr = new XMLHttpRequest();
     xhr.open("GET", `http://${location.host}/api/control/play/${speaker}/${loc}`)
     xhr.send()
@@ -348,4 +348,3 @@ window.addEventListener("keydown", function (event) {
 }, true);
 // the last option dispatches the event to the listener first,
 // then dispatches event to window
-
