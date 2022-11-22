@@ -41,6 +41,10 @@ button {
 .prog-bar {
     height: 8px !important;
 }
+.entry {
+    width: 100%;
+    
+}
 #info-bar {
     display: inline-block;
     width: 60%;

@@ -74,7 +74,7 @@ function writeFiles(data, loc) {
             last_char = first_char
             jumper = `<span class='marker' id='${first_char}'></span>`
         }
-        str += "<li><button onclick='fileButtonHandler(this.id)' " + `id='file-${e}'>` + e + "</button>" + jumper + "</li>"
+        str += "<li><button class='entry' onclick='fileButtonHandler(this.id)' " + `id='file-${e}'>` + e + "</button>" + jumper + "</li>"
     }
     str += "</ul>"
     document.getElementById("datalist").innerHTML = str;
